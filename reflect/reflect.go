@@ -1,4 +1,4 @@
-package pantry
+package reflect
 
 import (
 	"encoding"
@@ -204,3 +204,7 @@ func TraverseValueFields(v reflect.Value, processField ProcessValue) error {
 	return traverseValue(v, "", 0, nil, process)
 }
 
+func Clear(v interface{}) {
+	p := reflect.ValueOf(v).Elem()
+	p.Set(reflect.Zero(p.Type()))
+}

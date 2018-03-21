@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var timeType = reflect.TypeOf(time.Time{})
+
 // randFloat32 generates a random float taking the full range of a float32.
 func randFloat32(rand *rand.Rand) float32 {
 	f := rand.Float64() * math.MaxFloat32
@@ -31,12 +33,27 @@ func randInt64(rand *rand.Rand) int64 { return rand.Int63() - 1<<62 }
 
 // randString returns a random string.
 func randString(rand *rand.Rand, maxSize int) string {
-	numChars := rand.Intn(maxSize + 1)
+	numChars := rand.Int() % (maxSize + 1)
+	//fmt.Printf("maxSize: %d; numChars: %d \n", maxSize, numChars)
 	codePoints := make([]rune, numChars)
 	for i := 0; i < numChars; i++ {
-		codePoints[i] = rune(rand.Intn(0x10ffff))
+		codePoints[i] = rune(rand.Int()%0x10ffff + 1)
 	}
+	//fmt.Println("Exit randString")
 	return string(codePoints)
+}
+
+// randTime returns a random Time.
+func randTime(rand *rand.Rand, min, max time.Time) time.Time {
+	if max.Before(min) {
+		return min
+	}
+	if max.IsZero() {
+		max = time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	minSec := min.Unix()
+	sec := rand.Int63()%(max.Unix()-minSec) + minSec
+	return time.Unix(sec, rand.Int63()%1000000000)
 }
 
 type GeneratorsList map[reflect.Type]func(t reflect.Type, rand *rand.Rand) (value reflect.Value, ok bool)
@@ -60,7 +77,8 @@ type ValueConfig struct {
 	// 0 - never nil
 	// 100 - always nil
 	// default is 10
-	NilProbability   int
+	NilProbability int
+	// If is not defined then random Time will in 0001-01-01 00:00:00 +0000 UTC - 2100-01-01 00:00:00 +0000 UTC
 	MinTime, MaxTime time.Time
 	Generators       GeneratorsList
 }
@@ -134,6 +152,21 @@ func Value(t reflect.Type, rand *rand.Rand, config *ValueConfig) (value reflect.
 	return generateValue(t, rand, config, depth, size)
 }
 
+func isCompositeType(t reflect.Type) bool {
+	if t == timeType {
+		return false
+	}
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Array, reflect.Map, reflect.Slice, reflect.Struct:
+		return true
+	default:
+		return false
+	}
+}
+
 // generateValue returns an arbitrary value of the given type.
 func generateValue(t reflect.Type, rand *rand.Rand, config *ValueConfig, depth int, size int) (value reflect.Value, ok bool) {
 	size--
@@ -147,6 +180,10 @@ func generateValue(t reflect.Type, rand *rand.Rand, config *ValueConfig, depth i
 		if m, ok := reflect.Zero(t).Interface().(quick.Generator); ok {
 			return m.Generate(rand, config.MaxLength), true
 		}
+	}
+
+	if t == timeType {
+		return reflect.ValueOf(randTime(rand, config.MinTime, config.MaxTime)), true
 	}
 
 	v := reflect.New(t).Elem()
@@ -232,28 +269,38 @@ func generateValue(t reflect.Type, rand *rand.Rand, config *ValueConfig, depth i
 	case reflect.Struct:
 		n := v.NumField()
 		if n > 0 {
-			//numCompositeTypes := 0
-			//for i := 0; i < n; i++ {
-			//	if fieldValue := v.Field(i); fieldValue.CanSet() {
-			//		switch fieldValue.Kind() {
-			//		case reflect.Array, reflect.Map, reflect.Slice, reflect.Struct:
-			//			numCompositeTypes++
-			//		case reflect.Ptr:
-			//			switch concrete.Field(i).Type.Elem().Kind() {
-			//			case reflect.Array, reflect.Map, reflect.Slice, reflect.Struct:
-			//				numCompositeTypes++
-			//			}
-			//		}
-			//	}
-			//}
+			numCompositeTypes := 0
+			numNonCompositeTypes := 0
+			for i := 0; i < n; i++ {
+				if fieldValue := v.Field(i); fieldValue.CanSet() {
+					if isCompositeType(concrete.Field(i).Type) {
+						numCompositeTypes++
+					} else {
+						numNonCompositeTypes++
+					}
+				}
+			}
 
-			sizeLeft := size / n
-			if sizeLeft == 0 {
+			sizeLeft := size - numNonCompositeTypes
+			if sizeLeft > 0 {
+				if numCompositeTypes > 0 {
+					sizeLeft = sizeLeft / numCompositeTypes
+					if sizeLeft == 0 {
+						sizeLeft = 1
+					}
+				}
+			} else {
 				sizeLeft = 1
 			}
 			for i := 0; i < n; i++ {
 				if fieldValue := v.Field(i); fieldValue.CanSet() {
-					elem, ok := generateValue(concrete.Field(i).Type, rand, config, depth, size)
+					t := concrete.Field(i).Type
+					fieldSize := 2
+					if isCompositeType(t) {
+						fieldSize = sizeLeft
+						//fmt.Println(concrete.Field(i).Name, "; sizeLeft:", fieldSize)
+					}
+					elem, ok := generateValue(t, rand, config, depth, fieldSize)
 					if !ok {
 						return reflect.Value{}, false
 					}
@@ -267,47 +314,3 @@ func generateValue(t reflect.Type, rand *rand.Rand, config *ValueConfig, depth i
 
 	return v, true
 }
-
-//// A Config structure contains options for running a test.
-//type Config struct {
-//	// MaxCount sets the maximum number of iterations. If zero,
-//	// MaxCountScale is used.
-//	MaxCount int
-//	// MaxCountScale is a non-negative scale factor applied to the default
-//	// maximum. If zero, the default is unchanged.
-//	MaxCountScale float64
-//	// If non-nil, rand is a source of random numbers. Otherwise a default
-//	// pseudo-random source will be used.
-//	Rand *rand.Rand
-//	// If non-nil, the Values function generates a slice of arbitrary
-//	// reflect.Values that are congruent with the arguments to the function
-//	// being tested. Otherwise, the top-level Value function is used
-//	// to generate them.
-//	Values func([]reflect.Value, *rand.Rand)
-//}
-//
-//var defaultConfig Config
-//
-//// getRand returns the *rand.Rand to use for a given Config.
-//func (c *Config) getRand() *rand.Rand {
-//	if c.Rand == nil {
-//		return rand.New(rand.NewSource(0))
-//	}
-//	return c.Rand
-//}
-//
-//// getMaxCount returns the maximum number of iterations to run for a given
-//// Config.
-//func (c *Config) getMaxCount() (maxCount int) {
-//	maxCount = c.MaxCount
-//	if maxCount == 0 {
-//		if c.MaxCountScale != 0 {
-//			maxCount = int(c.MaxCountScale * float64(*defaultMaxCount))
-//		} else {
-//			maxCount = *defaultMaxCount
-//		}
-//	}
-//
-//	return
-//}
-//

@@ -1,12 +1,15 @@
-package pantry
+package reflect
 
 import (
+	"encoding"
+	"fmt"
 	"math/rand"
 	"net"
 	"reflect"
 	"testing"
-	"testing/quick"
 	"time"
+
+	test "github.com/yazver/golibs/testing"
 )
 
 func Test_assignStringToValue(t *testing.T) {
@@ -119,8 +122,8 @@ func Test_assignStringToValue(t *testing.T) {
 		reflect.TypeOf(float32(0)),
 		reflect.TypeOf(float64(0)),
 		reflect.TypeOf(bool(false)),
-		//reflect.TypeOf(""),
-		//reflect.TypeOf(time.Now()),
+		reflect.TypeOf(""),
+		reflect.TypeOf(time.Time{}),
 		//reflect.TypeOf(time.Second),
 		//reflect.TypeOf(net.IPv4(127, 0, 0, 1)),
 	}
@@ -132,18 +135,21 @@ func Test_assignStringToValue(t *testing.T) {
 		if rand.Intn(2) != 0 {
 			dst = dst.Addr()
 		}
-		srcValue, _ := quick.Value(tt, r)
-		src := srcValue.String()
-		//if rand.Intn(2) != 0 {
-		//	src = src.Addr()
-		//}
+		srcValue, _ := test.Value(tt, r, nil)
+		src := ""
+		if m, ok := dst.Interface().(encoding.TextMarshaler); ok {
+			b, _ := m.MarshalText()
+			src = string(b)
+		} else {
+			src = fmt.Sprint(srcValue.Interface())
+		}
 		wantErr := false
 		value := reflect.Indirect(dst)
 		if err := AssignStringToValue(dst, src); (err != nil) != wantErr {
-			t.Errorf("assignStringToValue(%v(%v), %v), error = %v, wantErr %v",
+			t.Errorf("AssignStringToValue(%v(%v), %v), error = %v, wantErr %v",
 				value.Type().Name(), value.Interface(), src, err, wantErr)
 		} else {
-			t.Logf("assignStringToValue(%v(%v), %v)",
+			t.Logf("AssignStringToValue(%v(%v), %v)",
 				value.Type().Name(), value.Interface(), src)
 		}
 	}
@@ -283,7 +289,7 @@ func Test_traverseStruct(t *testing.T) {
 	// TODO: Add test cases.
 	}
 	for _, tt := range tests {
-		if err := TraverseStruct(tt.args.v, tt.args.process); (err != nil) != tt.wantErr {
+		if err := Traverse(tt.args.v, tt.args.process); (err != nil) != tt.wantErr {
 			t.Errorf("%q. traverseStruct() error = %v, wantErr %v", tt.name, err, tt.wantErr)
 		}
 	}
@@ -302,7 +308,7 @@ func Test_traverseStructValue(t *testing.T) {
 	// TODO: Add test cases.
 	}
 	for _, tt := range tests {
-		if err := TraverseStructValue(tt.args.v, tt.args.process); (err != nil) != tt.wantErr {
+		if err := TraverseValue(tt.args.v, tt.args.process); (err != nil) != tt.wantErr {
 			t.Errorf("%q. traverseStructValue() error = %v, wantErr %v", tt.name, err, tt.wantErr)
 		}
 	}

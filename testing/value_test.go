@@ -63,6 +63,12 @@ type filledSmallStruct struct {
 	U uint
 }
 
+type leaf struct {
+	Value int
+	Left  *leaf
+	Right *leaf
+}
+
 type filledStruct struct {
 	internal1 string
 	internal2 bool
@@ -120,6 +126,8 @@ type filledStruct struct {
 	Struct     filledSmallStruct
 
 	SGTp []*generatedType
+
+	Leaf leaf
 }
 
 func traverseValue(v reflect.Value, name string, process func(v reflect.Value, name string) bool) bool {
@@ -153,9 +161,18 @@ func traverseValue(v reflect.Value, name string, process func(v reflect.Value, n
 }
 
 func TestValue(t *testing.T) {
+
 	config := NewValueConfig()
+	config.Depth = 10
+	config.Size = 10000
 	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 5000; i++ {
+		//seed := rand.Int63()
+		//seed := int64(1895008806655175727) // Ok
+		//seed := int64(9221914701813994119) // time out
+		//seed := int64(9221562872235418891) // time out
+		//fmt.Printf("Seed: %d; i: %d\n", seed, i)
+		//fakeRand := NewFakeRand(seed)
 		fakeRand := NewFakeRand(rand.Int63())
 		samples := map[reflect.Kind]*struct {
 			t reflect.Type
@@ -210,8 +227,22 @@ func TestValue(t *testing.T) {
 				return
 			}
 		} else {
-			t.Errorf("Unable to create arbitrary struct. Value returned false.")
+			t.Errorf("Unable to create arbitrary value. Value returned false.")
 			return
 		}
+
+		if v, ok := Value(timeType, fakeRand, config); ok {
+			timeValue := reflect.ValueOf(randTime(fakeRand, config.MinTime, config.MaxTime))
+			b := reflect.DeepEqual(v.Interface(), timeValue.Interface())
+			if !b {
+				t.Errorf("Value must be equal to %[1]T(%#[1]v), but it has a value %[2]T(%#[2]v)", timeValue.Interface(), v.Interface())
+				return
+			}
+		} else {
+			t.Errorf("Unable to create arbitrary value. Value returned false.")
+			return
+		}
+
 	}
+
 }
