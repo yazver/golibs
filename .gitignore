@@ -6,6 +6,10 @@
 # Folders
 _obj
 _test
+.git/
+.settings/
+.idea/
+bin/
 
 # Architecture specific extensions/prefixes
 *.[568vq]
@@ -20,5 +24,8 @@ _cgo_export.*
 _testmain.go
 
 *.exe
+*.exe~
 *.test
 *.prof
+*~
+debug
