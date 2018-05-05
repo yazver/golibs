@@ -69,51 +69,67 @@ func findUnmarshaler(v reflect.Value) encoding.TextUnmarshaler {
 
 // AssignStringToValue tries to convert the string to the appropriate type and assign it to the destination variable.
 func AssignStringToValue(dst reflect.Value, src string) (err error) {
-	if u := findUnmarshaler(dst); u != nil {
-		return u.UnmarshalText([]byte(src))
-	}
-	dst = reflect.Indirect(dst)
+	//dst = reflect.Indirect(dst)
 	if !dst.CanSet() {
 		return errValueIsNotAssignable
 	}
-	if dst.CanInterface() {
-		if _, ok := dst.Interface().(time.Duration); ok {
+
+	v := dst
+	//assignPtr := false
+	var ptr reflect.Value
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			ptr = reflect.New(v.Type().Elem())
+			v = ptr.Elem()
+			//assignPtr := true
+		} else {
+			v = v.Elem()
+		}
+	}
+	if u := findUnmarshaler(v); u != nil {
+		return u.UnmarshalText([]byte(src))
+	}
+	if v.CanInterface() {
+		if _, ok := v.Interface().(time.Duration); ok {
 			duration, err := time.ParseDuration(src)
 			if err == nil {
-				dst.Set(reflect.ValueOf(duration))
+				v.Set(reflect.ValueOf(duration))
 			}
 			return err
 		}
 	}
-	switch dst.Kind() {
+	switch v.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		i, err := strconv.ParseInt(src, 0, dst.Type().Bits())
+		i, err := strconv.ParseInt(src, 0, v.Type().Bits())
 		if err != nil {
 			return err
 		}
-		dst.SetInt(i)
+		v.SetInt(i)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		ui, err := strconv.ParseUint(src, 0, dst.Type().Bits())
+		ui, err := strconv.ParseUint(src, 0, v.Type().Bits())
 		if err != nil {
 			return err
 		}
-		dst.SetUint(ui)
+		v.SetUint(ui)
 	case reflect.Float32, reflect.Float64:
-		f, err := strconv.ParseFloat(src, dst.Type().Bits())
+		f, err := strconv.ParseFloat(src, v.Type().Bits())
 		if err != nil {
 			return err
 		}
-		dst.SetFloat(f)
+		v.SetFloat(f)
 	case reflect.Bool:
 		b, err := strconv.ParseBool(src)
 		if err != nil {
 			return err
 		}
-		dst.SetBool(b)
+		v.SetBool(b)
 	case reflect.String:
-		dst.SetString(src)
+		v.SetString(src)
 	default:
-		err = fmt.Errorf("Unable to convert string \"%s\" to type \"%s\"", src, dst.Type().Name())
+		err = fmt.Errorf("Unable to convert string \"%s\" to type \"%s\"", src, v.Type().Name())
+	}
+	if ptr.Kind() == reflect.Ptr {
+		dst.Set(ptr)
 	}
 	return
 }
@@ -169,7 +185,7 @@ func addFieldName(path, field string) string {
 }
 
 func traverseValue(v reflect.Value, path string, depth uint, field *reflect.StructField, process ProcessValue) error {
-	v = reflect.Indirect(v)
+	//v = reflect.Indirect(v)
 	if err := process(v, path, depth, field); err != nil {
 		return err
 	}
@@ -199,6 +215,12 @@ func traverseValue(v reflect.Value, path string, depth uint, field *reflect.Stru
 				keyStr = fmt.Sprintf("[%v]", key.Interface())
 			}
 			if err := traverseValue(v.MapIndex(key), path+keyStr, depth, nil, process); err != nil {
+				return err
+			}
+		}
+	case reflect.Ptr:
+		if !v.IsNil() {
+			if err := traverseValue(v.Elem(), "*("+path+")", depth, nil, process); err != nil {
 				return err
 			}
 		}
