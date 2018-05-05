@@ -10,6 +10,8 @@ _test
 .settings/
 .idea/
 bin/
+.testing/
+.vscode/
 
 # Architecture specific extensions/prefixes
 *.[568vq]

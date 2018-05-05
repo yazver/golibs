@@ -10,35 +10,38 @@ import (
 )
 
 var (
-	errValueIsNil         = errors.New("Invalid value, should be not nil")
-	errValueIsNotPointer  = errors.New("Invalid value, should be pointer")
-	errValueIsNotStruct   = errors.New("Invalid value, should be struct")
-	errValueIsNotEditable = errors.New("Invalid value, should be editable")
+	errValueIsNil           = errors.New("Invalid value, should be not nil")
+	errValueIsNotPointer    = errors.New("Invalid value, should be pointer")
+	errValueIsNotStruct     = errors.New("Invalid value, should be struct")
+	errValueIsNotAssignable = errors.New("Invalid value, should be assignable")
 )
 
-func getMarshaler(v reflect.Value) encoding.TextMarshaler {
-	if v.CanInterface() {
-		if m, ok := v.Interface().(encoding.TextMarshaler); ok {
-			return m
-		}
-	}
-	return nil
-}
+// func getMarshaler(v reflect.Value) encoding.TextMarshaler {
+// 	if v.CanInterface() {
+// 		if m, ok := v.Interface().(encoding.TextMarshaler); ok {
+// 			return m
+// 		}
+// 	}
+// 	return nil
+// }
 
-func findMarshaler(v reflect.Value) encoding.TextMarshaler {
-	if m := getMarshaler(v); m != nil {
-		return m
-	}
-	if v.CanAddr() {
-		if m := getMarshaler(v.Addr()); m != nil {
-			return m
-		}
-	}
-	if m := getMarshaler(reflect.Indirect(v)); m != nil {
-		return m
-	}
-	return nil
-}
+// func findMarshaler(v reflect.Value) encoding.TextMarshaler {
+// 	if m := getMarshaler(v); m != nil {
+// 		return m
+// 	}
+// 	if v.CanAddr() {
+// 		if m := getMarshaler(v.Addr()); m != nil {
+// 			return m
+// 		}
+// 	}
+// 	if m := getMarshaler(reflect.Indirect(v)); m != nil {
+// 		return m
+// 	}
+// 	return nil
+// }
+
+// type TextMarshalers map[reflect.Type]func() (text []byte, err error)
+// type TextUnmarshalers map[reflect.Type]func(text []byte) error
 
 func getUnmarshaler(v reflect.Value) encoding.TextUnmarshaler {
 	if v.CanInterface() {
@@ -64,13 +67,14 @@ func findUnmarshaler(v reflect.Value) encoding.TextUnmarshaler {
 	return nil
 }
 
+// AssignStringToValue tries to convert the string to the appropriate type and assign it to the destination variable.
 func AssignStringToValue(dst reflect.Value, src string) (err error) {
 	if u := findUnmarshaler(dst); u != nil {
 		return u.UnmarshalText([]byte(src))
 	}
 	dst = reflect.Indirect(dst)
 	if !dst.CanSet() {
-		return errors.New("Value is not assignable")
+		return errValueIsNotAssignable
 	}
 	if dst.CanInterface() {
 		if _, ok := dst.Interface().(time.Duration); ok {
@@ -114,41 +118,54 @@ func AssignStringToValue(dst reflect.Value, src string) (err error) {
 	return
 }
 
+// AssignString tries to convert the string to the appropriate type and assign it to the destination variable.
+func AssignString(dst interface{}, src string) error {
+	return AssignStringToValue(reflect.ValueOf(dst), src)
+}
+
+// AssignValue tries to convert source to destination. If possible, it converts the string to the destination type.
 func AssignValue(dst, src reflect.Value) (err error) {
 	dst = reflect.Indirect(dst)
 	if !dst.CanSet() {
-		return errValueIsNotEditable
+		return errValueIsNotAssignable
 	}
 	src = reflect.Indirect(src)
 
-	defer func() {
-		if e := recover(); e != nil {
-			switch e := e.(type) {
-			case error:
-				err = e
-			case string:
-				err = errors.New(e)
-			default:
-				panic(e)
-			}
-		}
-	}()
 	if src.Kind() == reflect.String {
 		return AssignStringToValue(dst, src.String())
+	}
+
+	if !src.Type().ConvertibleTo(dst.Type()) {
+		return fmt.Errorf("Value of type \"%s\" cannot be converted to type \"%s\"", src.Type().Name(), dst.Type().Name())
 	}
 	value := src.Convert(dst.Type())
 	dst.Set(value)
 	return nil
 }
 
-type ProcessValue func(value reflect.Value, path string, level uint, field *reflect.StructField) error
-
-func Traverse(v interface{}, process ProcessValue) error {
-	return traverseValue(reflect.ValueOf(v), "", 0, nil, process)
+// Assign tries to convert source to destination. If possible, it converts the string to the destination type.
+func Assign(dst, src interface{}) error {
+	return AssignValue(reflect.ValueOf(dst), reflect.ValueOf(src))
 }
 
+// ProcessValue is type of callback function for Traverse function.
+type ProcessValue func(value reflect.Value, path string, level uint, field *reflect.StructField) error
+
+// Traverse iterates through all the nested elements of the passed variable.
+func Traverse(v interface{}, process ProcessValue) error {
+	return TraverseValue(reflect.ValueOf(v), process)
+}
+
+// TraverseValue iterates through all the nested elements of the passed variable.
 func TraverseValue(v reflect.Value, process ProcessValue) error {
 	return traverseValue(v, "", 0, nil, process)
+}
+
+func addFieldName(path, field string) string {
+	if path == "" {
+		return field
+	}
+	return path + "." + field
 }
 
 func traverseValue(v reflect.Value, path string, depth uint, field *reflect.StructField, process ProcessValue) error {
@@ -164,7 +181,7 @@ func traverseValue(v reflect.Value, path string, depth uint, field *reflect.Stru
 		for i := 0; i < structType.NumField(); i++ {
 			structField := structType.Field(i)
 			fieldValue := v.Field(i)
-			if err := traverseValue(fieldValue, path+"."+structField.Name, depth, &structField, process); err != nil {
+			if err := traverseValue(fieldValue, addFieldName(path, structField.Name), depth, &structField, process); err != nil {
 				return err
 			}
 		}
@@ -190,10 +207,12 @@ func traverseValue(v reflect.Value, path string, depth uint, field *reflect.Stru
 	return nil
 }
 
+// TraverseFields iterates through all structs's fields of the passed variable.
 func TraverseFields(v interface{}, processField ProcessValue) error {
 	return TraverseValueFields(reflect.ValueOf(v), processField)
 }
 
+// TraverseValueFields iterates through all structs's fields of the passed variable.
 func TraverseValueFields(v reflect.Value, processField ProcessValue) error {
 	process := func(value reflect.Value, path string, level uint, field *reflect.StructField) error {
 		if field != nil {
@@ -204,6 +223,7 @@ func TraverseValueFields(v reflect.Value, processField ProcessValue) error {
 	return traverseValue(v, "", 0, nil, process)
 }
 
+// Clear variable
 func Clear(v interface{}) {
 	p := reflect.ValueOf(v).Elem()
 	p.Set(reflect.Zero(p.Type()))
