@@ -123,6 +123,7 @@ func Test_AssignValue(t *testing.T) {
 	var ti time.Time
 	var d time.Duration
 	var ip net.IP
+	var pi *int
 
 	b2 := true
 
@@ -220,7 +221,10 @@ func Test_AssignValue(t *testing.T) {
 		{args{&ip, "1000.0.0.1", nil}, true},
 		{args{&ip, d, nil}, true},
 
-		{args{s, "unassignable", nil}, true},
+		{args{&pi, "19", nil}, false}, // Assign to nil pointer
+		{args{&pi, "20", nil}, false}, // Assign to allocated pointer
+
+		{args{"", "unassignable", nil}, true},
 		{args{new(struct{}), "hi", nil}, true},
 	}
 	for _, tt := range tests {

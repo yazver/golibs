@@ -69,19 +69,17 @@ func findUnmarshaler(v reflect.Value) encoding.TextUnmarshaler {
 
 // AssignStringToValue tries to convert the string to the appropriate type and assign it to the destination variable.
 func AssignStringToValue(dst reflect.Value, src string) (err error) {
-	//dst = reflect.Indirect(dst)
 	if !dst.CanSet() {
 		return errValueIsNotAssignable
 	}
 
 	v := dst
-	//assignPtr := false
 	var ptr reflect.Value
+	// Allocate if pointer is nil
 	if v.Kind() == reflect.Ptr {
 		if v.IsNil() {
 			ptr = reflect.New(v.Type().Elem())
 			v = ptr.Elem()
-			//assignPtr := true
 		} else {
 			v = v.Elem()
 		}
@@ -136,7 +134,7 @@ func AssignStringToValue(dst reflect.Value, src string) (err error) {
 
 // AssignString tries to convert the string to the appropriate type and assign it to the destination variable.
 func AssignString(dst interface{}, src string) error {
-	return AssignStringToValue(reflect.ValueOf(dst), src)
+	return AssignStringToValue(reflect.Indirect(reflect.ValueOf(dst)), src)
 }
 
 // AssignValue tries to convert source to destination. If possible, it converts the string to the destination type.
