@@ -139,7 +139,7 @@ func AssignString(dst interface{}, src string) error {
 
 // AssignValue tries to convert source to destination. If possible, it converts the string to the destination type.
 func AssignValue(dst, src reflect.Value) (err error) {
-	dst = reflect.Indirect(dst)
+	//dst = reflect.Indirect(dst)
 	if !dst.CanSet() {
 		return errValueIsNotAssignable
 	}
@@ -149,7 +149,12 @@ func AssignValue(dst, src reflect.Value) (err error) {
 		return AssignStringToValue(dst, src.String())
 	}
 
-	if !src.Type().ConvertibleTo(dst.Type()) {
+	if dst.Kind() == reflect.Ptr && src.Type().ConvertibleTo(dst.Type().Elem()) {
+		if dst.IsNil() {
+			dst = reflect.New(dst.Type().Elem())
+		}
+		dst = dst.Elem()
+	} else if !src.Type().ConvertibleTo(dst.Type()) {
 		return fmt.Errorf("Value of type \"%s\" cannot be converted to type \"%s\"", src.Type().Name(), dst.Type().Name())
 	}
 	value := src.Convert(dst.Type())
@@ -159,7 +164,7 @@ func AssignValue(dst, src reflect.Value) (err error) {
 
 // Assign tries to convert source to destination. If possible, it converts the string to the destination type.
 func Assign(dst, src interface{}) error {
-	return AssignValue(reflect.ValueOf(dst), reflect.ValueOf(src))
+	return AssignValue(reflect.Indirect(reflect.ValueOf(dst)), reflect.ValueOf(src))
 }
 
 // ProcessValue is type of callback function for Traverse function.

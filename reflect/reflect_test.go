@@ -32,6 +32,7 @@ func Test_AssignString(t *testing.T) {
 	var ti time.Time
 	var d time.Duration
 	var ip net.IP
+	var pi *int
 
 	type args struct {
 		dst      interface{}
@@ -90,6 +91,9 @@ func Test_AssignString(t *testing.T) {
 		{args{&ip, "127.0.0.1", net.IPv4(127, 0, 0, 1)}, false},
 		{args{&ip, "2001:db8::", net.ParseIP("2001:db8::")}, false},
 		{args{&ip, "1000.0.0.1", nil}, true},
+
+		{args{&pi, "19", nil}, false}, // Assign to nil pointer
+		{args{&pi, "20", nil}, false}, // Assign to allocated pointer
 
 		{args{s, "unassignable", nil}, true},
 	}
@@ -221,8 +225,8 @@ func Test_AssignValue(t *testing.T) {
 		{args{&ip, "1000.0.0.1", nil}, true},
 		{args{&ip, d, nil}, true},
 
-		{args{&pi, "19", nil}, false}, // Assign to nil pointer
-		{args{&pi, "20", nil}, false}, // Assign to allocated pointer
+		{args{&pi, 19, nil}, false}, // Assign to nil pointer
+		{args{&pi, 20, nil}, false}, // Assign to allocated pointer
 
 		{args{"", "unassignable", nil}, true},
 		{args{new(struct{}), "hi", nil}, true},
@@ -248,7 +252,8 @@ func Test_Traverse(t *testing.T) {
 		Map    map[int]bool
 		Slice  []string
 		M      mini
-	}{"str", 2, map[int]bool{1: true, 2: false}, []string{"one", "two"}, mini{10000000000}}
+		PInt   *int
+	}{"str", 2, map[int]bool{1: true, 2: false}, []string{"one", "two"}, mini{10000000000}, new(int)}
 
 	type args struct {
 		expected  interface{}
@@ -262,6 +267,7 @@ func Test_Traverse(t *testing.T) {
 		"Slice[0]": &args{"one", false},
 		"Slice[1]": &args{"two", false},
 		"M.I":      &args{int64(10000000000), false},
+		"*(PInt)":  &args{0, false},
 	}
 
 	process := func(value reflect.Value, path string, level uint, field *reflect.StructField) error {
